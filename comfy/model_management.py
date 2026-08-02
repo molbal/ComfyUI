@@ -772,6 +772,8 @@ class LoadedModel:
             return self.model_memory()
 
     def model_load(self, lowvram_model_memory=0, force_patch_weights=False):
+        import comfy.metrics
+        comfy.metrics.increment_model_swaps()
         self.model.model_patches_to(self.device)
         self.model.model_patches_to(self.model.model_dtype())
 
@@ -787,6 +789,8 @@ class LoadedModel:
         self.real_model = weakref.ref(real_model)
         self.model_finalizer = weakref.finalize(real_model, cleanup_models)
         self.model_finalizer.atexit = False
+        comfy.metrics.update_vram_metrics(self.device)
+        comfy.metrics.update_loaded_models_count(len(current_loaded_models))
         return real_model
 
     def should_reload_model(self, force_patch_weights=False):
@@ -795,15 +799,21 @@ class LoadedModel:
         return False
 
     def model_unload(self, memory_to_free=None, unpatch_weights=True):
+        import comfy.metrics
+        comfy.metrics.increment_model_swaps()
         if memory_to_free is not None:
             if memory_to_free < self.model.loaded_size():
                 freed = self.model.partially_unload(self.model.offload_device, memory_to_free)
+                comfy.metrics.update_vram_metrics(self.device)
+                comfy.metrics.update_loaded_models_count(len(current_loaded_models))
                 if freed >= memory_to_free:
                     return False
         self.model.detach(unpatch_weights)
         self.model_finalizer.detach()
         self.model_finalizer = None
         self.real_model = None
+        comfy.metrics.update_vram_metrics(self.device)
+        comfy.metrics.update_loaded_models_count(len(current_loaded_models))
         return True
 
     def model_use_more_vram(self, extra_memory, force_patch_weights=False):

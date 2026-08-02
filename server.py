@@ -334,6 +334,23 @@ class PromptServer():
             response.headers["Expires"] = "0"
             return response
 
+        if getattr(args, "enable_prometheus", False) and getattr(args, "prometheus_port", None) is None:
+            @routes.get('/metrics')
+            async def get_metrics(request):
+                try:
+                    import prometheus_client
+                    data = prometheus_client.generate_latest()
+                    content_type = prometheus_client.CONTENT_TYPE_LATEST
+                    charset = None
+                    if "charset=" in content_type:
+                        parts = content_type.split(";")
+                        content_type = ";".join([p for p in parts if "charset=" not in p]).strip()
+                        charset = "utf-8"
+                    return web.Response(body=data, content_type=content_type, charset=charset)
+                except Exception as e:
+                    logging.error(f"Error serving metrics: {e}")
+                    return web.Response(text=f"Error: {e}", status=500)
+
         @routes.get("/embeddings")
         def get_embeddings(request):
             embeddings = folder_paths.get_filename_list("embeddings")
@@ -1395,6 +1412,11 @@ class PromptServer():
 
     def queue_updated(self):
         self.send_sync("status", { "status": self.get_queue_info() })
+        try:
+            import comfy.metrics
+            comfy.metrics.update_queue_length(len(self.prompt_queue.queue))
+        except Exception:
+            pass
 
     async def publish_loop(self):
         while True:
